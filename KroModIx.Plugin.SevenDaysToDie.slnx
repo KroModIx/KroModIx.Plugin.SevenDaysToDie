@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="KroModIx.Plugin.SevenDaysToDie/KroModIx.Plugin.SevenDaysToDie.csproj" />
+  <Project Path="KroModIx.Plugin.SevenDaysToDie.Tests/KroModIx.Plugin.SevenDaysToDie.Tests.csproj" />
+</Solution>
