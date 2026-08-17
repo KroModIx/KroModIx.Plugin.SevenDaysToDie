@@ -24,9 +24,13 @@ public sealed class SevenDaysToDiePlugin : IGameModPlugin, IUpdateNotifier
     public PluginMetadata Metadata { get; } = new(
         Id: "kroste.sevendaystodie",
         DisplayName: "7 Days to Die Mod-Manager",
-        Version: "0.1.0",
+        Version: "0.1.1",
         Author: "Kroste",
         Description: "Mod-Verwaltung für 7 Days to Die (The Fun Pimps). " +
+            "v0.1.1: Manifest-GC — verwaiste Install-Manifests (Mod-Ordner " +
+            "manuell geloescht, Manifest blieb) werden vor dem Update-Check " +
+            "garbage-collected. Kein Phantom-Update-Badge mehr auf der " +
+            "Sidebar-Kachel. " +
             "v0.1.0: Drei Tabs (Installiert / Nexus-Katalog / Downloads). " +
             "Vanilla-Loader — keine BepInEx/MelonLoader-Installation noetig, " +
             "nur der Mods/-Ordner. Jeder Mod ein eigener Ordner mit " +
@@ -83,6 +87,24 @@ public sealed class SevenDaysToDiePlugin : IGameModPlugin, IUpdateNotifier
         _bus = new DownloadEventBus();
         _enricher = new SevenDaysNexusRowEnricher(host.Nexus, _covers, host);
         _activatedGames = activatedGames;
+
+        // v0.1.1: Manifest-GC-Callback — der UpdateChecker fragt VOR jedem
+        // Version-Compare welche Mod-Ordner physisch existieren und purged
+        // Manifests fuer geloeschte Mods (kein Phantom-Update-Badge mehr).
+        _updateChecker.InstalledKeysProvider = () =>
+        {
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var g in _activatedGames)
+            {
+                try
+                {
+                    foreach (var mod in _scanner.Scan(g))
+                        keys.Add(SevenDaysInstallManifestStore.BuildKey(mod.FolderName));
+                }
+                catch (Exception ex) { host.Logger.Debug(ex, "Scan fuer Manifest-GC fehlgeschlagen: {Dir}", g.InstallDir); }
+            }
+            return keys;
+        };
 
         // Auto-Update-Check nach 15s Bootstrap-Delay + Re-Check auf jedes
         // ModInstalled-Event.
