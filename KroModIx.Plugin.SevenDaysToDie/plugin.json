@@ -7,7 +7,7 @@
   "description": "Mod-Manager für 7 Days to Die (The Fun Pimps). v0.1.2: Badge-Refresh-Fehler landen im Log statt still verschluckt zu werden. v0.1.1: Manifest-GC — verwaiste Install-Manifests (Mod-Ordner manuell geloescht, Manifest blieb) werden vor dem Update-Check garbage-collected. Kein Phantom-Update-Badge mehr auf der Sidebar-Kachel. v0.1.0: Drei Tabs (Installiert / Nexus-Katalog / Downloads). Vanilla-Loader — kein Bootstrap noetig, nur Mods/-Ordner. Jeder Mod ein eigener Ordner mit ModInfo.xml (A20+ Attribut-Format und aelteres Element-Format werden geparst). Enable/Disable via .disabled-Ordner-Suffix. Nexus-Voll-Katalog via GraphQL, Detail-Dialog mit Rich-HTML + KI-Zusammenfassung, SharpCompress-Auto-Layout-Install (Mods/-Root oder ModInfo.xml-Erkennung), IUpdateNotifier mit InstallManifest-Store, Row-Konsistenz in allen drei Tabs. DE+EN.",
   "assembly": "KroModIx.Plugin.SevenDaysToDie.dll",
   "entryType": "KroModIx.Plugin.SevenDaysToDie.SevenDaysToDiePlugin",
-  "minHostVersion": "1.21.0",
+  "minHostVersion": "1.27.0",
   "targets": [
     {
       "gameId": "7-days-to-die",
