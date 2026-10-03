@@ -17,7 +17,7 @@ namespace KroModIx.Plugin.SevenDaysToDie;
 /// Mods per Default aktiv). Jeder Mod ist ein Ordner mit ModInfo.xml.
 /// Enable/Disable per <c>.disabled</c>-Suffix am Ordner-Namen.
 /// Nutzt Host-Contract <see cref="IHostServices.Nexus"/> fuer den Katalog
-/// (Contracts v1.15+, oeffentliches GraphQL). SharpCompress fuer
+/// (Contracts v1.15+, oeffentliches GraphQL). Der Host-Archiv-Baukasten fuer
 /// ZIP/RAR/7z-Install.</summary>
 public sealed class SevenDaysToDiePlugin : IGameModPlugin, IUpdateNotifier
 {
@@ -38,7 +38,7 @@ public sealed class SevenDaysToDiePlugin : IGameModPlugin, IUpdateNotifier
             "werden geparst). Enable/Disable via .disabled-Ordner-Suffix. " +
             "Nexus-Voll-Katalog via GraphQL (Sort + Search + Kategorie-Filter), " +
             "Detail-Dialog mit Rich-HTML-Beschreibung + KI-Zusammenfassung, " +
-            "SharpCompress-Auto-Layout-Install (Mods/-Root oder ModInfo.xml-" +
+            "Auto-Layout-Install (Mods/-Root oder ModInfo.xml-" +
             "Erkennung), IUpdateNotifier mit InstallManifest-Store, Row-" +
             "Konsistenz in allen drei Tabs (Cover + Details + Doppelklick). " +
             "DE+EN.");
@@ -81,7 +81,7 @@ public sealed class SevenDaysToDiePlugin : IGameModPlugin, IUpdateNotifier
         _downloader = new SevenDaysDownloader(host.Nexus,
             host.CreateHttpClient("sevendaystodie-downloads"), _pluginPaths);
         _manifests = new SevenDaysInstallManifestStore(host);
-        _zipInstaller = new SevenDaysZipInstaller(_manifests);
+        _zipInstaller = new SevenDaysZipInstaller(host.Archives, _manifests);
         _updateChecker = new SevenDaysUpdateChecker(_manifests, _catalog);
         _covers = new CoverCache(host.CreateHttpClient("sevendaystodie-covers"), host);
         _bus = new DownloadEventBus();

@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using KroModIx.Plugin.Contracts;
 using NLog;
-using SharpCompress.Archives;
 
 namespace KroModIx.Plugin.SevenDaysToDie.Services;
 
@@ -18,14 +17,31 @@ namespace KroModIx.Plugin.SevenDaysToDie.Services;
 /// <item>Archiv enthaelt einen <c>Mods/&lt;X&gt;/</c>-Root-Ordner:
 /// direktes Extract ins Game-Root (behaelt Mods/-Layout).</item>
 /// <item>Sonst: Fehler „Kein 7DTD-Mod erkennbar".</item>
-/// </list></summary>
+/// </list>
+///
+/// <para><b>Seit v0.2.0 über <c>IHostServices.Archives</c></b> (Host
+/// v1.32.0). Welches Layout ein Archiv hat und wie der Mod-Ordner heißt,
+/// bleibt 7DTD-Wissen; das Öffnen der Formate und der Ausbruch-Schutz kommen
+/// aus dem Host. Der eigene Schutz prüfte an <b>zwei</b> Stellen
+/// <c>Contains("..")</c> — das lässt einen absoluten Eintragsnamen durch,
+/// und <c>Path.Combine</c> verwirft dann das Zielverzeichnis. Am
+/// Cyberpunk-Installer, der dieselbe Prüfung trug, nachgewiesen: die Datei
+/// landete außerhalb des Spiels und der Install meldete Erfolg.</para>
+///
+/// <para>Der Mod-Ordner je <c>ModInfo.xml</c> entsteht jetzt über
+/// <see cref="ArchiveExtractOptions.StripPrefix"/> statt über eine eigene
+/// Schleife mit Pfad-Arithmetik — genau der Fall, für den die Option im
+/// Baukasten vorgesehen ist.</para></summary>
 public sealed class SevenDaysZipInstaller
 {
     private static readonly Logger Log = LogManager.GetCurrentClassLogger();
+    private readonly IArchiveService _archives;
     private readonly SevenDaysInstallManifestStore? _manifests;
 
-    public SevenDaysZipInstaller(SevenDaysInstallManifestStore? manifests = null)
+    public SevenDaysZipInstaller(IArchiveService archives,
+        SevenDaysInstallManifestStore? manifests = null)
     {
+        _archives = archives;
         _manifests = manifests;
     }
 
@@ -45,34 +61,36 @@ public sealed class SevenDaysZipInstaller
 
         try
         {
-            using var archive = ArchiveFactory.Open(archivePath);
-            var entries = archive.Entries
-                .Where(e => !e.IsDirectory && !string.IsNullOrEmpty(e.Key))
-                .ToList();
+            // Am Inhalt pruefen, nicht an der Endung: ein Download mit
+            // falscher Endung landete sonst unveraendert im Spiel.
+            if (_archives.DetectKind(archivePath) == ArchiveKind.Unknown)
+                return SevenDaysZipInstallResult.Fail(
+                    "Das ist kein lesbares Archiv (ZIP/RAR/7z) — eventuell ein abgebrochener Download.");
+
+            var entries = _archives.List(archivePath);
             if (entries.Count == 0)
                 return SevenDaysZipInstallResult.Fail("Archiv ist leer.");
 
-            var normalized = entries
-                .Select(e => (Entry: e, Key: (e.Key ?? "").Replace('\\', '/')))
-                .ToList();
-
             // 1) Archiv enthaelt bereits das Mods/-Layout auf Root-Ebene.
-            var directLayout = normalized.Any(x =>
-                x.Key.StartsWith("Mods/", StringComparison.OrdinalIgnoreCase));
+            var directLayout = entries.Any(e =>
+                e.Path.StartsWith("Mods/", StringComparison.OrdinalIgnoreCase));
             if (directLayout)
             {
-                var installed = ExtractDirect(normalized, installDir);
-                var modFolders = InferModFolders(installed, modsRoot);
+                var r = _archives.Extract(archivePath, installDir);
+                if (Abgelehnt(r) is { } warnung)
+                    return new SevenDaysZipInstallResult(false, warnung,
+                        r.ExtractedPaths, Array.Empty<string>());
+                var modFolders = InferModFolders(r.ExtractedPaths, modsRoot);
                 WriteManifests(modFolders, archivePath);
                 return SevenDaysZipInstallResult.Ok(
-                    $"Direkt-Layout: {installed.Count} Datei(en) ins Game-Root extrahiert.",
-                    installed, modFolders);
+                    $"Direkt-Layout: {r.Count} Datei(en) ins Game-Root extrahiert.",
+                    r.ExtractedPaths, modFolders);
             }
 
             // 2) Kein Mods/-Root, aber irgendwo ModInfo.xml.
-            var modInfoEntries = normalized
-                .Where(x => x.Key.EndsWith("/ModInfo.xml", StringComparison.OrdinalIgnoreCase)
-                         || string.Equals(x.Key, "ModInfo.xml", StringComparison.OrdinalIgnoreCase))
+            var modInfoEntries = entries
+                .Where(e => e.Path.EndsWith("/ModInfo.xml", StringComparison.OrdinalIgnoreCase)
+                         || string.Equals(e.Path, "ModInfo.xml", StringComparison.OrdinalIgnoreCase))
                 .ToList();
             if (modInfoEntries.Count == 0)
                 return SevenDaysZipInstallResult.Fail(
@@ -82,37 +100,38 @@ public sealed class SevenDaysZipInstaller
             // alle Files unter diesem Prefix nach Mods/<ordnerName>/ extrahieren.
             var installedAll = new List<string>();
             var modFoldersSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var abgelehnt = new List<string>();
             foreach (var mi in modInfoEntries)
             {
-                string prefix, folderName;
-                var slash = mi.Key.LastIndexOf('/');
+                string? prefix;
+                string folderName;
+                var slash = mi.Path.LastIndexOf('/');
                 if (slash < 0)
                 {
                     // ModInfo.xml direkt im Archiv-Root — Ordner-Name aus Archiv-Filename.
-                    prefix = "";
+                    prefix = null;
                     folderName = SanitizeFolder(Path.GetFileNameWithoutExtension(archivePath));
                 }
                 else
                 {
-                    prefix = mi.Key.Substring(0, slash + 1);
-                    folderName = new DirectoryInfo(prefix.TrimEnd('/')).Name;
+                    prefix = mi.Path[..slash];
+                    folderName = new DirectoryInfo(prefix).Name;
                 }
                 var target = Path.Combine(modsRoot, folderName);
                 Directory.CreateDirectory(target);
                 modFoldersSet.Add(target);
 
-                foreach (var x in normalized.Where(x => x.Key.StartsWith(prefix,
-                    StringComparison.OrdinalIgnoreCase)))
-                {
-                    var rel = prefix.Length == 0 ? x.Key : x.Key.Substring(prefix.Length);
-                    if (string.IsNullOrEmpty(rel) || rel.EndsWith("/")) continue;
-                    if (rel.Contains("..")) { Log.Warn("Zip-Slip: {N}", rel); continue; }
-                    var dst = Path.Combine(target, rel.Replace('/', Path.DirectorySeparatorChar));
-                    Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
-                    ExtractOne(x.Entry, dst);
-                    installedAll.Add(dst);
-                }
+                var r = _archives.Extract(archivePath, target,
+                    new ArchiveExtractOptions(StripPrefix: prefix));
+                installedAll.AddRange(r.ExtractedPaths);
+                abgelehnt.AddRange(r.SkippedUnsafe);
             }
+
+            if (abgelehnt.Count > 0)
+                return new SevenDaysZipInstallResult(false,
+                    Meldung(abgelehnt, installedAll.Count), installedAll,
+                    modFoldersSet.ToList());
+
             WriteManifests(modFoldersSet.ToList(), archivePath);
             return SevenDaysZipInstallResult.Ok(
                 $"ModInfo-Layout: {modFoldersSet.Count} Mod-Ordner extrahiert.",
@@ -125,26 +144,30 @@ public sealed class SevenDaysZipInstaller
         }
     }
 
+    /// <summary>Hat der Ausbruch-Schutz Einträge abgelehnt, bricht der
+    /// Install mit Meldung ab — statt still das zu installieren, was
+    /// durchkam. Das trifft auch ein bloß kaputtes Archiv mit einem krummen
+    /// Eintrag unter zweihundert; bewusst, denn ein Archiv, das aus dem
+    /// Spielverzeichnis herausschreiben will, ist nicht „überwiegend in
+    /// Ordnung", und die Entscheidung gehört dem Nutzer.</summary>
+    private static string? Abgelehnt(ArchiveExtractResult r)
+        => r.SkippedUnsafe.Count == 0 ? null : Meldung(r.SkippedUnsafe, r.Count);
+
+    private static string Meldung(IReadOnlyList<string> abgelehnt, int geschrieben)
+    {
+        Log.Warn("Ausbruchsversuch im Archiv, {Count} Eintrag/Einträge abgelehnt: {Entries}",
+            abgelehnt.Count, string.Join(", ", abgelehnt));
+        return $"Abgebrochen: {abgelehnt.Count} Eintrag/Einträge wollten aus dem "
+             + "Spielverzeichnis herausschreiben — "
+             + string.Join(", ", abgelehnt.Take(3))
+             + (abgelehnt.Count > 3 ? ", …" : "")
+             + $". {geschrieben} Datei(en) waren schon geschrieben, bevor das auffiel.";
+    }
+
     private static string SanitizeFolder(string s)
     {
         var invalid = Path.GetInvalidFileNameChars();
         return new string(s.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
-    }
-
-    private static IReadOnlyList<string> ExtractDirect(
-        IReadOnlyList<(IArchiveEntry Entry, string Key)> entries, string installDir)
-    {
-        var installed = new List<string>();
-        foreach (var (entry, key) in entries)
-        {
-            if (string.IsNullOrEmpty(key) || key.EndsWith('/')) continue;
-            if (key.Contains("..")) { Log.Warn("Zip-Slip: {N}", key); continue; }
-            var dst = Path.Combine(installDir, key.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
-            ExtractOne(entry, dst);
-            installed.Add(dst);
-        }
-        return installed;
     }
 
     /// <summary>Aus einer flachen Liste installierter Files die Mod-Ordner
@@ -165,13 +188,6 @@ public sealed class SevenDaysZipInstaller
             folders.Add(Path.Combine(modsRoot, rel[..sep]));
         }
         return folders.ToList();
-    }
-
-    private static void ExtractOne(IArchiveEntry entry, string destination)
-    {
-        using var input = entry.OpenEntryStream();
-        using var output = File.Create(destination);
-        input.CopyTo(output);
     }
 
     /// <summary>Fuer jeden installierten Mod-Ordner ein Manifest speichern.
@@ -196,7 +212,12 @@ public sealed class SevenDaysZipInstaller
         }
     }
 
-    public static readonly string[] SupportedExtensions = new[] { ".zip", ".rar", ".7z" };
+    /// <summary>Endungs-Vorfilter fuer den Downloads-Tab. Kommt aus dem
+    /// Host-Baukasten, damit ein dort neu unterstuetztes Format nicht in
+    /// neun Plugins nachgetragen werden muss.</summary>
+    public IReadOnlyList<string> SupportedExtensions => _archives.SupportedExtensions;
+
+    public bool HasSupportedExtension(string path) => _archives.HasSupportedExtension(path);
 }
 
 public sealed record SevenDaysZipInstallResult(
