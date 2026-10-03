@@ -130,7 +130,18 @@ public sealed partial class InstalledModsViewModel : ObservableObject, IDisposab
     [RelayCommand]
     private void OpenPluginsFolder()
     {
+        // v0.3.0: Ensure statt Get — nach einer Neuinstallation existiert der
+        // Mods-Ordner nicht, und OpenDirectory auf einen fehlenden Pfad tut
+        // nichts sichtbares. 7DTD legt ihn sonst erst beim ersten
+        // Spielstart an.
         var dir = _paths.EnsureModsDir(_game);
+        if (dir is null)
+        {
+            _host.Notifications.Notify(
+                $"Mods-Ordner konnte nicht angelegt werden: {_game.InstallDir}",
+                NotificationLevel.Warning);
+            return;
+        }
         _host.Shell.OpenDirectory(dir);
     }
 

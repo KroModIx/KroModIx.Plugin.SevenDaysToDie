@@ -10,15 +10,20 @@ namespace KroModIx.Plugin.SevenDaysToDie.Services;
 /// mehr noetig).</summary>
 public sealed class SevenDaysPathResolver
 {
-    public string GetModsDir(DetectedGame game)
-        => Path.Combine(game.InstallDir, "Mods");
+    private static readonly string[] ModDirCandidates = { "Mods", "mods" };
 
-    /// <summary>Legt <c>&lt;InstallDir&gt;/Mods/</c> an falls noch nicht
-    /// vorhanden. Aufruf idempotent.</summary>
-    public string EnsureModsDir(DetectedGame game)
-    {
-        var dir = GetModsDir(game);
-        Directory.CreateDirectory(dir);
-        return dir;
-    }
+    /// <summary>Der vorhandene Mods-Ordner, oder null. Legt nichts an.
+    /// v0.3.0: findet unter Linux auch ein abweichend geschriebenes
+    /// <c>mods/</c> — 7DTD selbst laedt beide Schreibweisen.</summary>
+    public string? GetModsDir(DetectedGame game)
+        => string.IsNullOrEmpty(game.InstallDir)
+            ? null
+            : ModFolderDiscovery.Find(game.InstallDir, ModDirCandidates);
+
+    /// <summary>Legt <c>&lt;InstallDir&gt;/Mods/</c> an falls keine Variante
+    /// existiert. Idempotent; null nur wenn das Anlegen scheitert.</summary>
+    public string? EnsureModsDir(DetectedGame game)
+        => string.IsNullOrEmpty(game.InstallDir)
+            ? null
+            : ModFolderDiscovery.FindOrCreate(game.InstallDir, ModDirCandidates);
 }

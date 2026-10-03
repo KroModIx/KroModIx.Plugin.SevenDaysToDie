@@ -37,7 +37,10 @@ public sealed class SevenDaysZipInstaller
         if (string.IsNullOrEmpty(installDir) || !Directory.Exists(installDir))
             return SevenDaysZipInstallResult.Fail($"7DTD-InstallDir ungueltig: {installDir}");
 
-        var modsRoot = Path.Combine(installDir, "Mods");
+        // v0.3.0: anlegen statt annehmen, und eine abweichende Schreibweise
+        // findet ModFolderDiscovery mit — 7DTD laedt beide.
+        var modsRoot = ModFolderDiscovery.FindOrCreate(installDir, "Mods", "mods")
+                       ?? Path.Combine(installDir, "Mods");
         Directory.CreateDirectory(modsRoot);
 
         try
