@@ -64,7 +64,9 @@ public sealed class SevenDaysModScanner
             }
             catch { /* skip individual broken folders */ }
         }
-        return mods.OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+        // Fremdverwaltete Eintraege einmal beim Scan markieren.
+        return mods.Select(m => m.MitVerwalterErkennung())
+            .OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
     }
 
     /// <summary>Parst ModInfo.xml. Toleriert beide historischen 7DTD-

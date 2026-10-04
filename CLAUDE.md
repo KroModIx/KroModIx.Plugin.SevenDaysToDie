@@ -77,3 +77,25 @@ nachgebaut, sondern dieselbe Funktion `ArchivePathSafety` aus den Contracts.
 **Ein Ausbruchsversuch bricht den Install ab**, statt still das zu
 installieren, was durchkam — und die Meldung nennt, was schon geschrieben
 wurde, damit der Nutzer weiß, was er aufräumen soll.
+
+## Fremde Mod-Manager (ab v0.5.0)
+
+`SevenDaysModScanner` markiert über `SevenDaysMod.MitVerwalterErkennung()`, wenn ein Eintrag
+unter `Mods/` **einem anderen Mod-Manager** gehört —
+`ForeignManagerDetection` aus den Contracts (v1.34.0). Der LS-ModManager-Kreis und lmm liefern in denselben Mods-Ordner.
+
+**Erkannt am Verweis, nicht am Namen.** Die fremden Werkzeuge legen Verweise
+in ihren eigenen Zwischenspeicher; eine von Hand hineinkopierte Mod ist eine
+gewöhnliche Datei. Damit trägt es auch für Manager, deren Namensschema niemand
+kennt. `Uninstall` und `SetEnabled` werfen dann mit einer Meldung, die
+Verwalter, Folge und Ausweg nennt.
+
+**Die Erkennung läuft einmal beim Scan, nicht als berechnete Eigenschaft.**
+Sonst löst jede Bindung in der Oberfläche einen Dateisystem-Zugriff aus.
+
+**Der Anlass ist bezahlt, nur in einem anderen Plugin.** Am 04.10.2026 hat ein
+Deinstallieren-Klick im Icarus-Plugin lmms zusammengeführtes Pak entfernt und
+damit lautlos eine Mod aus dem Spiel genommen — die Quelle lag unversehrt in
+lmms Zwischenspeicher, und gesucht wurde der Fehler danach stundenlang im
+Spiel. Nachgemessen hatten **9 von 9** Plugins löschende Pfade und genau
+eines erkannte Verweise.
